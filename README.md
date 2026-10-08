@@ -1,4 +1,3 @@
-```markdown
 # ResearchCrew
 
 > **Four AI agents. One cited report.** Multi-agent research powered by LangGraph.
@@ -11,7 +10,7 @@ Built on a 100% free, self-hostable stack.
 
 ## How It Works
 
-```
+```markdown
 Topic in
    │
    ▼
@@ -23,7 +22,9 @@ SUPERVISOR ◄──────────────────┐
           │
           ▼
    Final report (cited)
+
 ```
+
 
 **Agent roles:**
 
@@ -58,7 +59,7 @@ All free and self-hostable. No paid APIs, no cloud vector DBs, no proprietary lo
 
 ## Repository Layout
 
-```
+```markdown
 research-crew/
 ├── README.md
 ├── .gitignore
