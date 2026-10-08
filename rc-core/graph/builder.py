@@ -1,19 +1,18 @@
-# rc-core/graph/builder.py
 import time
+
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 
 from graph.state import ResearchState
-from agents.supervisor import decide
 from agents.researcher import researcher
 from agents.writer import writer
 from agents.critic import critic
-
-PHASE = "p0"
-ROUTE_MAP = {"researcher": "researcher", "writer": "writer", "critic": "critic", "end": END}
+from agents.supervisor import decide
 
 
-def _apply_reducer(state, out):
+def _apply_reducer(state: ResearchState, out: dict) -> ResearchState:
+    """Merge a node's output into state, respecting the add reducer
+    on research_findings (append) and overwriting all other keys."""
     merged = dict(state)
     for key, value in out.items():
         if key == "research_findings":
@@ -23,34 +22,47 @@ def _apply_reducer(state, out):
     return merged
 
 
-def _reason(name, out, state):
+def _reason(name: str, out: dict) -> str:
     if name == "researcher":
         return f"{len(out.get('research_findings', []))} findings appended"
     if name == "writer":
         return f"draft {len(out.get('draft', ''))} chars"
     if name == "critic":
-        score = out.get("confidence_scores", {}).get("avg")
-        score_txt = f"score={score}, " if score is not None else ""
-        return score_txt + ("approved" if out.get("is_approved") else "revision requested")
+        scores = out.get("confidence_scores", {})
+        avg = sum(scores.values()) / len(scores) if scores else 0
+        verdict = "approved" if out.get("is_approved") else "revision requested"
+        return f"score={avg:.1f}, {verdict}"
     return ""
 
 
-def logged(name, fn):
-    def wrapper(state):
+def logged(name: str, fn):
+    def wrapper(state: ResearchState) -> dict:
         t0 = time.perf_counter()
         out = fn(state)
+        merged = _apply_reducer(state, out)
+        nxt = decide(merged)
         ms = int((time.perf_counter() - t0) * 1000)
-        nxt = decide(_apply_reducer(state, out))
-        print(f"[{PHASE}] {name} → {nxt} | {_reason(name, out, state)} | {ms}ms")
+        print(f"[p0] {name} -> {nxt} | {_reason(name, out)} | {ms}ms")
         return out
     return wrapper
 
 
 def build_graph():
-    g = StateGraph(ResearchState)
-    g.add_node("researcher", logged("researcher", researcher))
-    g.add_node("writer", logged("writer", writer))
-    g.add_node("critic", logged("critic", critic))
-    for src in (START, "researcher", "writer", "critic"):
-        g.add_conditional_edges(src, decide, ROUTE_MAP)
-    return g.compile(checkpointer=MemorySaver())
+    graph = StateGraph(ResearchState)
+
+    graph.add_node("researcher", logged("researcher", researcher))
+    graph.add_node("writer", logged("writer", writer))
+    graph.add_node("critic", logged("critic", critic))
+
+    route_map = {
+        "researcher": "researcher",
+        "writer": "writer",
+        "critic": "critic",
+        "end": END,
+    }
+    graph.add_conditional_edges(START, decide, route_map)
+    graph.add_conditional_edges("researcher", decide, route_map)
+    graph.add_conditional_edges("writer", decide, route_map)
+    graph.add_conditional_edges("critic", decide, route_map)
+
+    return graph.compile(checkpointer=MemorySaver())
