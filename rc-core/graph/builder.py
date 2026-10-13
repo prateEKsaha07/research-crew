@@ -1,18 +1,29 @@
-import time
+"""Graph assembly — nodes, edges, checkpointer, log decorator.
 
-from langgraph.graph import StateGraph, START, END
+The Supervisor is not a node; `decide()` is invoked as a conditional
+edge from every source (START and each worker node).
+
+Phase 2 change: LLM is injected into researcher and writer via
+functools.partial. get_llm() is called once by the caller, not at
+module import.
+"""
+
+import time
+from functools import partial
+
+from langgraph.graph import END, START, StateGraph
 from langgraph.checkpoint.memory import MemorySaver
 
-from graph.state import ResearchState
-from agents.researcher import researcher
-from agents.writer import writer
 from agents.critic import critic
+from agents.researcher import researcher
 from agents.supervisor import decide
+from agents.writer import writer
+from graph.state import ResearchState
 
 
-def _apply_reducer(state: ResearchState, out: dict) -> ResearchState:
+def _apply_reducer(state: dict, out: dict) -> dict:
     """Merge a node's output into state, respecting the add reducer
-    on research_findings (append) and overwriting all other keys."""
+    on research_findings and overwriting all other keys."""
     merged = dict(state)
     for key, value in out.items():
         if key == "research_findings":
@@ -36,23 +47,35 @@ def _reason(name: str, out: dict) -> str:
 
 
 def logged(name: str, fn):
+    """Wrap a node with timing and a [p2] transition log line."""
     def wrapper(state: ResearchState) -> dict:
         t0 = time.perf_counter()
         out = fn(state)
         merged = _apply_reducer(state, out)
         nxt = decide(merged)
         ms = int((time.perf_counter() - t0) * 1000)
-        print(f"[p0] {name} -> {nxt} | {_reason(name, out)} | {ms}ms")
+        print(f"[p2] {name} -> {nxt} | {_reason(name, out)} | {ms}ms")
         return out
     return wrapper
 
 
-def build_graph():
+def build_graph(llm):
+    """Assemble and compile the pipeline. llm must be an LLMClient."""
     graph = StateGraph(ResearchState)
 
-    graph.add_node("researcher", logged("researcher", researcher))
-    graph.add_node("writer", logged("writer", writer))
-    graph.add_node("critic", logged("critic", critic))
+    # Bind llm into the two LLM-using nodes; critic stays stub
+    graph.add_node(
+        "researcher",
+        logged("researcher", partial(researcher, llm=llm)),
+    )
+    graph.add_node(
+        "writer",
+        logged("writer", partial(writer, llm=llm)),
+    )
+    graph.add_node(
+        "critic",
+        logged("critic", critic),
+    )
 
     route_map = {
         "researcher": "researcher",

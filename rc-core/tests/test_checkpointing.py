@@ -1,9 +1,8 @@
 """Phase 1: verify MemorySaver writes a checkpoint per run."""
 
 from uuid import uuid4
-
 from graph.builder import build_graph
-
+from tests._fake_llm import FakeLLM
 
 def _initial_state():
     return {
@@ -16,6 +15,20 @@ def _initial_state():
         "is_approved": False,
         "current_step": "start",
     }
+
+def _fake_llm():
+    return FakeLLM([
+        # query gen
+        "query one\nquery two\nquery three",
+        # summaries
+        "Finding one.",
+        "Finding two.",
+        "Finding three.",
+        # writer draft
+        "# Report\n\n## Executive Summary\n...",
+        # writer revise
+        "# Report (revised)\n\n## Executive Summary\n...",
+    ])
 
 
 def test_checkpoint_saved_after_run():

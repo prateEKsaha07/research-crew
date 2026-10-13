@@ -1,40 +1,43 @@
-from graph.state import ResearchState
+"""Writer node — real LLM draft and revise.
+
+Modes:
+    - Draft: when state["critique"] is empty.
+    - Revise: when state["critique"] is non-empty.
+
+Contract: always returns {"draft": ..., "critique": ""}.
+Clearing critique tells the Supervisor to route back to Critic.
+"""
+
+from prompts.templates import writer_draft, writer_revise
+from tools.llm import DRAFT_MAX_TOKENS
 
 
-def writer(state: ResearchState) -> dict:
-    """Phase 0 stub: returns a fake Markdown draft with 5 sections.
-
-    Reads research_findings for citations and critique (if present)
-    to enter revision mode. Clears critique after writing so the
-    Supervisor routes back to Critic for re-evaluation.
-
-    Contract: Writer MUST set critique = "" on every return.
-    """
+def writer(state: dict, llm) -> dict:
+    """Phase 2: real LLM writer."""
+    topic = state["topic"]
     findings = state["research_findings"]
     critique = state["critique"]
 
-    urls = [f.split(" | ", 1)[-1] for f in findings]
-    findings_md = "\n".join(f"- {f}" for f in findings)
+    if critique:
+        # Revise mode
+        prompt = writer_revise(
+            draft=state["draft"],
+            critique=critique,
+        )
+    else:
+        # Draft mode
+        prompt = writer_draft(
+            topic=topic,
+            research_findings=findings,
+        )
 
-    title_suffix = " (revised)" if critique else ""
-    draft = f"""# Research Findings{title_suffix}
-
-## Executive Summary
-This is a placeholder executive summary.
-
-## Background
-This is a placeholder background section.
-
-## Key Findings
-{findings_md}
-
-Sources: {', '.join(urls)}
-
-## Implications
-Placeholder implications.
-
-## Conclusion
-Placeholder conclusion.
-"""
+    reply = llm.chat(
+        [{"role": "user", "content": prompt}],
+        temperature=0.7,
+        max_tokens=DRAFT_MAX_TOKENS,
+    )
+    draft = reply.strip()
+    if not draft:
+        raise ValueError("Writer returned an empty draft.")
 
     return {"draft": draft, "critique": ""}
