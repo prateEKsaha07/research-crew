@@ -1,11 +1,11 @@
 """CLI entry — run the research pipeline for a topic."""
-
 import sys
 from uuid import uuid4
 
 from graph.builder import build_graph
 from tools.llm import LLMUnavailableError, get_llm
-
+from agents.researcher import ResearchError
+from tools.search import SearchUnavailableError
 
 def main():
     topic = " ".join(sys.argv[1:])
@@ -39,7 +39,10 @@ def main():
     try:
         final = graph.invoke(initial_state, config=config)
     except LLMUnavailableError as e:
-        print(f"error: LLM unavailable — {e}", file=sys.stderr)
+        print(f"error: LLM unavailable - {e}", file=sys.stderr)
+        sys.exit(1)
+    except (SearchUnavailableError, ResearchError) as e:
+        print(f"error: research failed - {e}", file=sys.stderr)
         sys.exit(1)
 
     # Checkpoint verification

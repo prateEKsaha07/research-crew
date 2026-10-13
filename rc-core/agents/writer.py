@@ -13,7 +13,7 @@ from tools.llm import DRAFT_MAX_TOKENS
 
 
 def writer(state: dict, llm) -> dict:
-    """Phase 2: real LLM writer."""
+    """Phase 3: findings are list[dict]; no pipe parsing here."""
     topic = state["topic"]
     findings = state["research_findings"]
     critique = state["critique"]

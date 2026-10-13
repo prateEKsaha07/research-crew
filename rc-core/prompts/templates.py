@@ -1,9 +1,12 @@
-"""Prompt templates for Research & Report Crew (Phase 2).
+"""Prompt templates for Research & Report Crew (Phase 3).
 
 Pure functions: inputs in, prompt string out.
 No LLM calls, no state access.
 Temperature and max_tokens are chosen by the calling agent, not here.
 critic_score is not defined yet (Phase 4).
+
+Phase 3 change: researcher_summarize takes (query, snippet);
+writer_draft renders list[dict] findings as "<text> | <url>".
 """
 
 _QUERY_GEN = """Generate 3 to 5 distinct web search queries to research this topic: {topic}
@@ -16,12 +19,16 @@ Rules:
 
 _SUMMARIZE = """Write ONE factual sentence about: {query}
 
+Use ONLY this snippet:
+{snippet}
+
 Rules:
 - One sentence only. Max 30 words.
 - No preamble. No URL. No citations.
 
 Example:
 Query: quantum computing RSA threat
+Snippet: Shor's algorithm can factor large integers exponentially faster than classical methods.
 Output: Quantum computers running Shor's algorithm could break RSA-2048 encryption within the next decade."""
 
 _DRAFT = """Write a 900-1400 word report in Markdown on this topic: {topic}
@@ -70,24 +77,27 @@ def researcher_query_gen(topic: str) -> str:
     return _QUERY_GEN.format(topic=topic)
 
 
-def researcher_summarize(query: str) -> str:
-    """Build the one-sentence finding prompt.
+def researcher_summarize(query: str, snippet: str) -> str:
+    """Build the one-sentence finding prompt from a search snippet.
 
-    Inputs: query (str).
+    Inputs: query (str), snippet (str, search result body).
     Expected LLM output: ONE factual sentence, max 30 words, no URL.
-    The URL is appended by code in agents/researcher.py, not by the LLM.
+    The URL is attached by code in agents/researcher.py, not by the LLM.
     """
-    return _SUMMARIZE.format(query=query)
+    return _SUMMARIZE.format(query=query, snippet=snippet)
 
 
-def writer_draft(topic: str, research_findings: list[str]) -> str:
+def writer_draft(topic: str, research_findings: list[dict]) -> str:
     """Build the first-draft prompt.
 
-    Inputs: topic (str), research_findings (list of "<text> | <url>" strings).
+    Inputs: topic (str), research_findings (list of {"text","url"} dicts).
     Expected LLM output: 900-1400 word Markdown with the 5 exact headings,
     citations as [source](url) in Key Findings only.
     """
-    return _DRAFT.format(topic=topic, findings="\n".join(research_findings))
+    findings_block = "\n".join(
+        f"{f['text']} | {f['url']}" for f in research_findings
+    )
+    return _DRAFT.format(topic=topic, findings=findings_block)
 
 
 def writer_revise(draft: str, critique: str) -> str:

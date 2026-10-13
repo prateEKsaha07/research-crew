@@ -7,6 +7,13 @@ the full router logic.
 from agents.supervisor import decide
 
 
+_FINDINGS = [
+    {"text": "a", "url": "https://a.example/x"},
+    {"text": "b", "url": "https://b.example/y"},
+    {"text": "c", "url": "https://c.example/z"},
+]
+
+
 def _base_state(**overrides):
     """Minimal state with sensible defaults, overridable per test."""
     state = {
@@ -28,19 +35,19 @@ def test_no_findings_routes_to_researcher():
 
 
 def test_findings_no_draft_routes_to_writer():
-    assert decide(_base_state(research_findings=["a", "b", "c"])) == "writer"
+    assert decide(_base_state(research_findings=list(_FINDINGS))) == "writer"
 
 
 def test_draft_no_critique_routes_to_critic():
     assert decide(_base_state(
-        research_findings=["a", "b", "c"],
+        research_findings=list(_FINDINGS),
         draft="# Report...",
     )) == "critic"
 
 
 def test_approved_routes_to_end():
     assert decide(_base_state(
-        research_findings=["a", "b", "c"],
+        research_findings=list(_FINDINGS),
         draft="# Report...",
         critique="Needs more citations",
         is_approved=True,
@@ -50,17 +57,18 @@ def test_approved_routes_to_end():
 
 def test_not_approved_within_cap_routes_to_writer():
     assert decide(_base_state(
-        research_findings=["a", "b", "c"],
+        research_findings=list(_FINDINGS),
         draft="# Report...",
         critique="Needs more citations",
         is_approved=False,
         revision_count=1,
     )) == "writer"
 
+
 def test_cap_reached_ends():
-    """revision_count=3, not approved → cap forces end."""
+    """revision_count=3, not approved -> cap forces end."""
     assert decide(_base_state(
-        research_findings=["a", "b", "c"],
+        research_findings=list(_FINDINGS),
         draft="# Report...",
         critique="Needs more citations",
         is_approved=False,
@@ -69,20 +77,21 @@ def test_cap_reached_ends():
 
 
 def test_rejected_at_count_2_goes_to_writer():
-    """Boundary: revision_count=2, not approved → still routes to writer."""
+    """Boundary: revision_count=2, not approved -> still routes to writer."""
     assert decide(_base_state(
-        research_findings=["a", "b", "c"],
+        research_findings=list(_FINDINGS),
         draft="# Report...",
         critique="Needs more citations",
         is_approved=False,
         revision_count=2,
     )) == "writer"
 
+
 def test_draft_without_critique_with_stale_approved_flag():
     """Structural check precedes content check: empty critique means
     Critic hasn't run, regardless of is_approved."""
     assert decide(_base_state(
-        research_findings=["a", "b", "c"],
+        research_findings=list(_FINDINGS),
         draft="# Report...",
         critique="",
         is_approved=True,

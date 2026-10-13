@@ -1,22 +1,35 @@
-"""Researcher node — LLM-only for Phase 2.
+"""Researcher node — real search + LLM summaries (Phase 3).
 
 Flow:
     1. Generate 3-5 search queries from the topic.
-    2. For each query, ask the LLM for a one-sentence finding.
-    3. Append a code-generated example.com URL to each finding.
-    4. Return findings for the reducer to append to state.
+    2. For each query, run a web search via tools.search.
+    3. Summarize the first unseen result's snippet with the LLM.
+    4. Return {text, url} findings; reducer appends to state.
 
-Phase 3 will replace the URL generation with real Jiro search results.
+Budget: RESEARCH_BUDGET_S caps wall time spent between queries.
+Budget check runs between queries only; one slow call can overshoot.
 """
 
 import re
+from time import perf_counter
 
 from prompts.templates import researcher_query_gen, researcher_summarize
 from tools.llm import (
-    LLMUnavailableError,
     QUERY_MAX_TOKENS,
     SUMMARY_MAX_TOKENS,
 )
+from tools.search import (
+    DEFAULT_MAX_RESULTS,
+    SearchUnavailableError,
+    search,
+)
+
+
+RESEARCH_BUDGET_S = 18
+
+
+class ResearchError(Exception):
+    """Raised when the researcher cannot produce any findings."""
 
 
 # Pre-compiled regexes for query cleaning
@@ -49,14 +62,9 @@ def _parse_queries(reply: str) -> list[str]:
     return queries
 
 
-def _slugify(query: str) -> str:
-    """Turn a query into a URL-safe slug."""
-    slug = re.sub(r"[^a-z0-9]+", "-", query.lower()).strip("-")
-    return slug or "finding"
-
-
 def researcher(state: dict, llm) -> dict:
-    """Phase 2: LLM-only researcher. No search, no memory."""
+    """Phase 3: search + LLM summaries. Returns only new findings."""
+    t0 = perf_counter()
     topic = state["topic"]
 
     # 1. Generate queries
@@ -68,14 +76,33 @@ def researcher(state: dict, llm) -> dict:
     )
     queries = _parse_queries(reply)
     if not queries:
-        raise ValueError(
+        raise ResearchError(
             f"Researcher produced zero usable queries. Raw reply: {reply!r}"
         )
 
-    # 2. Summarize each query into a finding
+    # 2. Search + summarize
     findings = []
-    for query in queries:
-        s_prompt = researcher_summarize(query)
+    seen_urls = set()
+    for i, q in enumerate(queries):
+        if perf_counter() - t0 > RESEARCH_BUDGET_S:
+            print(f"[researcher] budget exceeded after {i} queries")
+            break
+
+        try:
+            results = search(q, max_results=DEFAULT_MAX_RESULTS)
+        except SearchUnavailableError as e:
+            print(f"[researcher] search failed for query: {q!r} ({e})")
+            continue
+
+        chosen = None
+        for r in results:
+            if r["url"] not in seen_urls:
+                chosen = r
+                break
+        if chosen is None:
+            continue
+
+        s_prompt = researcher_summarize(q, chosen["snippet"])
         summary = llm.chat(
             [{"role": "user", "content": s_prompt}],
             temperature=0.3,
@@ -83,11 +110,12 @@ def researcher(state: dict, llm) -> dict:
         )
         text = summary.strip()
         if not text:
-            raise ValueError(
-                f"Researcher got empty summary for query: {query!r}"
-            )
-        slug = _slugify(query)
-        findings.append(f"{text} | https://example.com/{slug}")
+            continue
 
-    # 3. Return only the new findings; reducer handles the merge
+        findings.append({"text": text, "url": chosen["url"]})
+        seen_urls.add(chosen["url"])
+
+    if not findings:
+        raise ResearchError("Researcher produced zero findings.")
+
     return {"research_findings": findings}
