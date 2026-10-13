@@ -9,19 +9,26 @@ from typing import Annotated, TypedDict
 from operator import add
 
 
+class Finding(TypedDict):
+    text: str
+    url: str
+
+
 class ResearchState(TypedDict):
     topic: str
-    research_findings: Annotated[list[str], add]   # append-only
+    research_findings: Annotated[list[Finding], add]   # append-only
     draft: str
     critique: str
     confidence_scores: dict
     revision_count: int
     is_approved: bool
     current_step: str
+
+```
 Field Reference
 Key	Type	Writer	Purpose
 topic	str	CLI / API	Subject to research
-research_findings	Annotated[list[str], add]	Researcher	Cited evidence, append-only
+research_findings	Annotated[list[Finding], add]	Researcher	Cited evidence: list of {text, url}, append-only
 draft	str	Writer	Current Markdown report
 critique	str	Writer (clears), Critic (writes)	Feedback or "approved"
 confidence_scores	dict	Critic	Per-dimension rubric scores
@@ -29,21 +36,12 @@ revision_count	int	Critic	Number of Critic passes
 is_approved	bool	Critic	Terminal flag
 current_step	str	(reserved)	Diagnostic
 The Reducer
-research_findings uses Annotated[list[str], add]. When a node returns this key, LangGraph runs add(existing, returned) instead of overwriting.
+research_findings uses Annotated[list[Finding], add]. When a node returns this key, LangGraph runs add(existing, returned) instead of overwriting.
 
 Consequence: Researcher must return only new findings. Returning state["research_findings"] + new causes exponential duplication.
 
 Convention
 State keys use snake_case. Every producer returns a dict whose keys are a subset of this schema.
-
-Phase 3 Migration
-research_findings migrates from list[str] (pipe-delimited "text | url") to list[dict] with {text, url}. Breaking change — every reader must update:
-
-researcher.py (producer)
-
-writer.py (reader)
-
-critic.py (citation verification)
 
 Graph Assembly
 File: rc-core/graph/builder.py
@@ -97,6 +95,7 @@ Log Decorator
 Wraps each node:
 
 text
+```
 def logged(name, fn):
     def wrapper(state):
         t0 = perf_counter()
@@ -107,14 +106,17 @@ def logged(name, fn):
         print(f"[p2] {name} -> {nxt} | {reason(name, out)} | {ms}ms")
         return out          # returns original output, not merged
     return wrapper
+```
 Critical: merged must respect the add reducer on research_findings. Naive {**state, **out} merge loses prior findings.
 
 Success Check
-bash
+```bash
 python -c "from graph.builder import build_graph; print(list(build_graph(llm=None).get_graph().nodes))"
 # Expected: ['__start__', 'researcher', 'writer', 'critic', '__end__']
+```
 Pipeline Flow
 text
+```
               ┌──────────────┐
               │     START    │
               └──────┬───────┘
@@ -142,6 +144,4 @@ text
                             ┌──────────┐
                             │   END    │
                             └──────────┘
-text
-
----
+```

@@ -5,8 +5,8 @@
 **Repo root:** `research-crew/`
 **Platform:** Windows, Python 3.12.2, PowerShell, venv
 **Working directory for CLI:** `D:\research-crew\rc-core`
-**Current phase:** 3 — Jiro Search + Real Citations
-**Latest tag:** `v0.3-real-llm`
+**Current phase:** 4 — Real Critic
+**Latest tag:** `v0.4-jiro`
 
 ## Mission
 

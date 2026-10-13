@@ -37,6 +37,7 @@
 - `v0.1-skeleton`
 - `v0.2-checkpointing`
 - `v0.3-real-llm`
+- `v0.4-jiro`
 
 ## Testing Expectations
 
@@ -45,52 +46,64 @@
 - Phase 4+: integration test of full graph (mock LLM)
 - Phase 6+: API test via httpx
 
-**Current:** 10 tests passing (`test_supervisor.py` × 8, `test_checkpointing.py` × 2)
+**Current:** 22 tests passing (`test_supervisor.py` x 8, `test_checkpointing.py` x 2, `test_search.py` x 7, `test_researcher.py` x 4, `test_writer.py` x 1)
 
 ## Console Log Formats
 
 **Node transition (Phase 2+):**
+
+```text
 [p2] <node> -> <next> | <reason> | <ms>ms
+LLM call:
 
 text
-
-**LLM call:**
 [llm] provider=<name> tokens_in=<N> tokens_out=<M> latency=<ms>ms model=<name>
 [llm] FAILED: <ExceptionType>: <message>
+Search call (Phase 3+):
 
 text
+[search] query=<q> results=<N> latency=<int>ms
+[search] FAILED: <ExceptionType>: <message>
+Checkpoint (CLI):
 
-**Checkpoint (CLI):**
+text
 [checkpoint] thread=<uuid>
 [checkpoint] revision_count=N next=()
+Contracts Summary (5 invariants)
+#	Invariant	Owner
+1	Writer clears critique after producing a draft	writer.py
+2	Critic always writes non-empty critique	critic.py
+3	Supervisor reads only presence/absence of critique	supervisor.py
+4	tools/llm.py never reimplements failover	tools/llm.py
+5	research_findings nodes return only new data	researcher.py
+Error Handling Philosophy
+LLM failure → freelm failover chain; if all fail, job fails with clear error
+
+Search failure → retry once, then proceed with fewer findings (no crash)
+
+Citation missing → Critic flags, Writer revision required
+
+Never silently degrade: all failures logged with job_id
+
+Design Decisions
+Supervisor pattern > peer-to-peer — debuggable, extendable
+
+Rule routing > LLM routing — deterministic, cheap, testable
+
+Hard revision cap = 3 — protects free LLM quotas
+
+pgvector inside Postgres — one database, one transaction
+
+SSE > WebSockets — simpler, one-way, proxy-friendly
+
+Citations validated against state — prevents hallucination
+
+Wrap FreeLLM, don't reimplement failover — freelm does it correctly
+
+URLs come from search, not LLM — LLMs hallucinate URLs
+
+Templates are pure string formatters — testable in isolation
 
 text
 
-## Contracts Summary (5 invariants)
-
-| # | Invariant | Owner |
-|---|---|---|
-| 1 | Writer clears `critique` after producing a draft | `writer.py` |
-| 2 | Critic always writes non-empty `critique` | `critic.py` |
-| 3 | Supervisor reads only presence/absence of `critique` | `supervisor.py` |
-| 4 | `tools/llm.py` never reimplements failover | `tools/llm.py` |
-| 5 | `research_findings` nodes return only new data | `researcher.py` |
-
-## Error Handling Philosophy
-
-- LLM failure → freelm failover chain; if all fail, job fails with clear error
-- Search failure → retry once, then proceed with fewer findings (no crash)
-- Citation missing → Critic flags, Writer revision required
-- Never silently degrade: all failures logged with `job_id`
-
-## Design Decisions
-
-- **Supervisor pattern > peer-to-peer** — debuggable, extendable
-- **Rule routing > LLM routing** — deterministic, cheap, testable
-- **Hard revision cap = 3** — protects free LLM quotas
-- **pgvector inside Postgres** — one database, one transaction
-- **SSE > WebSockets** — simpler, one-way, proxy-friendly
-- **Citations validated against state** — prevents hallucination
-- **Wrap `FreeLLM`, don't reimplement failover** — freelm does it correctly
-- **URLs generated in code, not LLM** — LLMs hallucinate URLs
-- **Templates are pure string formatters** — testable in isolation
+---

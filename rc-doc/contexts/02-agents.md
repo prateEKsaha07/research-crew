@@ -31,20 +31,34 @@ text
 **Type:** Node
 **Signature:** `researcher(state, llm) -> dict`
 
-**Phase 2 (current):** LLM-only, no search.
+**Phase 3 (current):** real ddgs search + LLM summaries.
 
 Flow:
 1. Extract topic
-2. `researcher_query_gen(topic)` → prompt
-3. `llm.chat(..., temperature=0.3, max_tokens=QUERY_MAX_TOKENS)` → queries
+2. `researcher_query_gen(topic)` -> prompt
+3. `llm.chat(..., temperature=0.3, max_tokens=QUERY_MAX_TOKENS)` -> queries
 4. Parse: strip numbering/bullets/quotes, dedup (case-insensitive), cap 5
-5. Zero usable queries → raise `ValueError`
-6. Per query: `researcher_summarize(query)`, `llm.chat(...)`, slug, append `example.com/<slug>`
-7. Return `{"research_findings": [...]}`
+5. Zero usable queries -> raise `ResearchError`
+6. Record `t0 = perf_counter()` at function entry
+7. Per query, in order:
+   - If `perf_counter() - t0 > RESEARCH_BUDGET_S` (18s): log
+     "[researcher] budget exceeded after N queries" and break
+   - `search(q, max_results=3)` from `tools.search`
+   - `SearchUnavailableError` -> log, continue to next query
+   - Pick first result whose url is not already in `seen_urls`
+   - `researcher_summarize(q, chosen["snippet"])` -> prompt
+   - `llm.chat(..., temperature=0.3, max_tokens=SUMMARY_MAX_TOKENS)`
+   - Append `{"text": text, "url": chosen["url"]}`, add to `seen_urls`
+8. Zero findings -> raise `ResearchError`
+9. Return `{"research_findings": [...]}`
 
-**Contract:** Returns **only new findings**. The `add` reducer handles merge.
+**Contract:** Returns **only new findings**. The `add` reducer handles
+the merge. `ResearchError` is defined in `researcher.py` and caught
+by `cli.py`.
 
-**Phase 3 change:** Replace placeholder URLs with real Jiro URLs.
+**Budget:** `RESEARCH_BUDGET_S = 18`. Checked between queries only;
+one slow search call can overshoot. Lowered from 25 after a Phase 3
+run measured 30.8s researcher wall time.
 
 ## Writer
 

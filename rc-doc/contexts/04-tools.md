@@ -23,7 +23,7 @@ CRITIC_MAX_TOKENS  = 800     # Phase 4
 Provider Chain
 Priority order: Gemini → Mistral → OpenRouter → NVIDIA NIM
 
-Cohere: deferred to Phase 3 (1,000 calls/month cap fits last-resort role)
+Cohere: deferred to Phase 4 (1,000 calls/month cap fits last-resort role)
 
 Groq: commented out (region-restricted)
 
@@ -50,15 +50,42 @@ NVIDIA_API_KEY=
 # GROQ_API_KEY=
 get_llm() skips providers with missing keys. Raises ValueError if all keys are missing.
 
-tools/search.py (Phase 3 — NEXT)
-Jiro HTTP client.
+tools/search.py (DONE — Phase 3)
+Thin wrapper around ddgs (the renamed duckduckgo-search package). Pure Python, no server, no config.
 
-Planned interface:
-
-text
-search(query: str, *, max_results: int = 3) -> list[dict]
+Public Surface
+python
+search(query: str, *, max_results: int = DEFAULT_MAX_RESULTS) -> list[dict]
 # Returns: [{"title": str, "url": str, "snippet": str}, ...]
-Details to be designed in Phase 3.
+# Raises SearchUnavailableError after all attempts fail.
+Constants
+text
+DEFAULT_MAX_RESULTS = 3
+SEARCH_RETRIES      = 1   # 2 attempts total
+Behavior
+ddgs DDGS().text(query, max_results=N) per attempt.
+
+One retry on any exception except "no results" (see below).
+
+DDGSException("No results found") is treated as [], not an error.
+
+Zero results returns [].
+
+Non-http(s) URLs and empty snippets are dropped.
+
+Result list truncated to max_results.
+
+Log Formats
+text
+[search] query=<q> results=<N> latency=<int>ms
+[search] FAILED: <ExceptionType>: <message>
+Field Mapping
+ddgs field	ours
+title	title
+href	url
+body	snippet
+Deferred
+Jiro was abandoned on Python 3.12 (selectolax Modest backend removed; aiosqlite event-loop race). ddgs replaced it.
 
 tools/memory.py (Phase 5)
 pgvector similarity search + embed + store findings.

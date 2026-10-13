@@ -1,8 +1,8 @@
 # Roadmap
 
-**Current phase:** 3 — Jiro Search + Real Citations
-**Latest tag:** `v0.3-real-llm`
-**Active branch:** `phase-3-jiro`
+**Current phase:** 4 — Real Critic
+**Latest tag:** `v0.4-jiro`
+**Active branch:** `phase-4-critic`
 
 ## Progress Tracker
 
@@ -11,14 +11,14 @@
 | 0 — Walking Skeleton | ✅ Done | `v0.1-skeleton` | Full pipeline with fake data |
 | 1 — Checkpointing | ✅ Done | `v0.2-checkpointing` | Verified routing + MemorySaver |
 | 2 — Real LLM | ✅ Done | `v0.3-real-llm` | Real LLM for Researcher + Writer |
-| 3 — Jiro Search | 🚧 In Progress | — | Real URLs, `list[dict]` findings |
-| 4 — Real Critic | ⏳ Pending | — | Rubric scoring, JSON output |
+| 3 — ddgs Search | ✅ Done | `v0.4-jiro` | Real URLs, `list[dict]` findings |
+| 4 — Real Critic | 🚧 In Progress | — | Rubric scoring, JSON output |
 | 5 — feenion + pgvector | ⏳ Pending | — | Tracing, semantic memory |
 | 6 — FastAPI + SSE | ⏳ Pending | — | HTTP API, streaming progress |
 | 7 — Docker Compose | ⏳ Pending | — | Container orchestration |
 | 8 — Kubernetes | ⏳ Pending | — | Cluster deployment |
 
-**3 of 9 phases complete.**
+**4 of 9 phases complete.**
 
 ## Phase 0 — Walking Skeleton ✅
 
@@ -57,19 +57,24 @@
 
 **Tag:** `v0.3-real-llm`
 
-## Phase 3 — Jiro Search 🚧 IN PROGRESS
+## Phase 3 — ddgs Search ✅
 
-**Goal:** Replace `example.com/<slug>` with real Jiro URLs.
+**Delivered:**
+- `tools/search.py` — ddgs client, one retry, empty-result handling
+- `graph/state.py` — `Finding` TypedDict, `research_findings` is `list[Finding]`
+- `prompts/templates.py` — `researcher_summarize(query, snippet)`; `writer_draft` renders `list[dict]` findings
+- `agents/researcher.py` — real search + summarize, `ResearchError`, `RESEARCH_BUDGET_S = 18`
+- `agents/writer.py` — reads findings as dicts, no pipe parsing
+- `cli.py` — catches `SearchUnavailableError` and `ResearchError`
+- `tests/test_search.py` (7), `test_researcher.py` (4), `test_writer.py` (1); supervisor fixtures migrated to dicts
+- `requirements.txt` created (langgraph, langchain-core, freelm, ddgs, python-dotenv, pytest)
+- `.env.example` created
 
-**Planned changes:**
-- `tools/search.py` — Jiro HTTP client
-- `graph/state.py` — `research_findings` from `list[str]` to `list[dict]` with `{text, url}`
-- `agents/researcher.py` — call Jiro per query, use real URLs
-- `prompts/templates.py` — `researcher_summarize` takes a search snippet
-- `agents/writer.py` — read `finding["url"]` instead of parsing strings
-- `tests/test_search.py` — new unit tests with mocked HTTP
+**Verified:** 22 tests passing. Full CLI run in ~26s, 4 real URLs, no `example.com`.
 
-**Success check:** `python rc-core/cli.py "quantum computing"` produces a report where every URL is clickable and points to a real page.
+**Note:** Jiro was abandoned on Python 3.12 (selectolax, aiosqlite). Replaced with `ddgs`.
+
+**Tag:** `v0.4-jiro`
 
 ## Phase 4 — Real Critic ⏳
 
@@ -79,6 +84,7 @@
 - `prompts/templates.py` — add `critic_score(draft, findings)` template
 - `agents/critic.py` — real LLM scoring, JSON parsing, retry on malformed
 - Code computes `avg` and `is_approved`; cap stays in supervisor
+- Cohere added to the provider chain
 
 **Success check:** Critic returns JSON scores; approval at avg ≥ 8; malformed JSON retries once then fails job.
 
@@ -142,12 +148,4 @@
 
 ## Next Atomic Action
 
-**Phase 3, Task 1:** Install Jiro and verify local server runs.
-
-```bash
-pip install jirosearch
-jiro serve
-curl http://localhost:8000/health
-text
-
----
+**Phase 4, Task 1:** Design `critic_score(draft, findings)` template and `agents/critic.py` LLM rubric. Temperature 0.0, `CRITIC_MAX_TOKENS = 800`. Malformed JSON -> one repair retry -> fail job.

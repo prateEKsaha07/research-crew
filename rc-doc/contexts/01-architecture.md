@@ -86,13 +86,13 @@ Breaking any of these causes infinite loop, early termination, or corrupt state.
 T+0.0 submit topic
 T+0.1 return job_id
 T+0.2 supervisor → researcher
-T+1-4 Jiro parallel + summarize
-T+4.1 → writer
-T+10 draft ready
-T+10.1 → critic
-T+12 score / revise (max 3)
-T+20-30 approved → save to DB + pgvector → completed
+T+1-18 ddgs search + summarize (sequential, budget-capped)
+T+18.1 → writer
+T+24 draft ready
+T+24.1 → critic
+T+26 score / revise (max 3)
+T+26-30 approved → save to DB + pgvector → completed
 
 text
 
-**Phase 2 measured:** ~22s end-to-end, 6 LLM calls, real LLM report.
+**Phase 3 measured:** ~26s end-to-end (under the 30s target), real ddgs search, 4 findings with live URLs, 6 LLM calls, revision cycle completes at revision_count=2.
