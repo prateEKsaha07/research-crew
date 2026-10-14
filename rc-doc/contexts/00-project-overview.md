@@ -5,8 +5,8 @@
 **Repo root:** `research-crew/`
 **Platform:** Windows, Python 3.12.2, PowerShell, venv
 **Working directory for CLI:** `D:\research-crew\rc-core`
-**Current phase:** 4 — Real Critic
-**Latest tag:** `v0.4-jiro`
+**Current phase:** 5 — feenion + pgvector
+**Latest tag:** `v0.5-critic`
 
 ## Mission
 

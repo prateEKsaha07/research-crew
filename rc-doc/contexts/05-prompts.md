@@ -2,7 +2,7 @@
 
 **File:** `rc-core/prompts/templates.py`
 
-Four pure string-returning functions. No LLM calls inside. No state access.
+Six pure string-returning functions. No LLM calls inside. No state access.
 
 ## Design Principles
 
@@ -97,22 +97,23 @@ Draft:
 {draft}
 Temperature: 0.7 · max_tokens: DRAFT_MAX_TOKENS (3500)
 
-Phase 4 Addition
-critic_score(draft, findings) -> str
-Will return a JSON rubric:
+critic_score(draft, findings: list[dict]) -> str
+Rubric-scoring prompt. Four dimensions scored 0-10 with anchors at 10 / 5 / 0. Instructs the LLM to output ONLY a JSON object (no fences), targeting the lowest-scoring dimension in critique, and not to request new sections or a citation-format change.
+
+The draft is delimited by <<<DRAFT>>> and <<<END_DRAFT>>>. The findings block uses the same render as writer_draft: "{text} | {url}" per line.
+
+Temperature: 0.0 · max_tokens: CRITIC_MAX_TOKENS (800)
+
+Schema the LLM must emit:
 
 json
-{
-  "scores": {"coverage": 6, "evidence": 5, "structure": 7, "clarity": 8},
-  "critique": "Add more citations in Key Findings."
-}
-LLM returns only scores and critique
+{"scores": {"coverage": <int>, "evidence": <int>, "structure": <int>, "clarity": <int>}, "critique": "<specific, actionable>"}
+The LLM never computes avg or is_approved; code does.
 
-Code computes avg and is_approved
+critic_repair(raw_output) -> str
+Single repair prompt after malformed Critic JSON. Returns the same schema with a literal example. One repair attempt; second failure raises CriticError from agents/critic.py.
 
-Temperature 0.0
-
-max_tokens: CRITIC_MAX_TOKENS (800)
+Temperature: 0.0 · max_tokens: CRITIC_MAX_TOKENS (800)
 
 text
 

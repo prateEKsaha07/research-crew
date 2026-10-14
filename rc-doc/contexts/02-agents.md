@@ -15,11 +15,14 @@ not state["draft"] -> "writer"
 
 not state["critique"] -> "critic"
 
-not state["is_approved"] and revision_count < 3 -> "writer"
+not state["is_approved"] and revision_count < MAX_REVISIONS -> "writer"
 
 otherwise -> "end"
 
 text
+
+`MAX_REVISIONS = 3` is defined in `supervisor.py` and imported by
+`critic.py`.
 
 **Contract:** Structural before content. Branch 3 (has Critic run?) precedes branch 4 (was it good?).
 
@@ -82,28 +85,42 @@ Flow:
 
 **File:** `rc-core/agents/critic.py`
 **Type:** Node
-**Signature:** `critic(state) -> dict` (Phase 2 stub), later `critic(state, llm)` (Phase 4)
+**Signature:** `critic(state, llm) -> dict`
 
-**Phase 2:** Stub. Forces one revision cycle (reject at count 0, approve at count 1).
+**Phase 4:** real LLM rubric.
 
-**Phase 4:** Real LLM rubric.
+Flow:
+1. Read draft, findings, revision_count
+2. `critic_score(draft, findings)` -> prompt
+3. `llm.chat(temp=0.0, max_tokens=CRITIC_MAX_TOKENS)` -> raw
+4. `_parse(raw)`: strip Markdown fences, `json.loads`, validate
+   - top-level must be an object
+   - `scores` must be an object with exactly {coverage, evidence, structure, clarity}
+   - each score must be a number (bool rejected explicitly), finite, in 0..10
+   - `critique` must be a str
+5. On parse failure: `critic_repair(raw)` -> `llm.chat` -> parse again. On second failure: raise `CriticError`.
+6. `avg = mean(4 scores)`, unrounded (7.96 stays 7.96, not 8.0)
+7. `new_count = revision_count + 1`
+8. Decide:
+   - `avg >= 8` -> `critique="approved"`, `is_approved=True`
+   - `new_count >= MAX_REVISIONS` (3) -> `critique="approved"`, `is_approved=True` (forced)
+   - else -> `critique = llm_critique.strip()`; if empty or `.lower() == "approved"`, replace with a fallback naming the lowest dimension; `is_approved=False`
+9. Log: `[critic] coverage=N evidence=N structure=N clarity=N avg=X.XX approved=B`
+10. Return: `{confidence_scores, critique, is_approved, revision_count: new_count}`
 
-Contract:
-- LLM returns `{scores: {coverage, evidence, structure, clarity}, critique}`
-- Code computes `avg` and `is_approved` (avg ≥ 8 → approve)
-- Cap enforcement stays in `supervisor.py`
-- Malformed JSON → retry once with repair prompt → fail job
-- `critique` is **ALWAYS non-empty** on every return path
+**Contract:** `critique` is **ALWAYS non-empty** on every return path (invariant 2). Critic touches only the four keys above.
 
 **Critique contract:**
 
 | Outcome | `critique` | `is_approved` |
 |---|---|---|
-| Reject | Specific feedback | `False` |
-| Approve | `"approved"` | `True` |
+| Reject | Specific feedback, or fallback naming lowest dim | `False` |
+| Approve (avg >= 8) | `"approved"` | `True` |
 | Forced approve (cap hit) | `"approved"` | `True` |
 
 Empty `critique` means only: "Critic has not run yet".
+
+**`CriticError`** is defined in `critic.py` and caught by `cli.py`.
 
 ## Agent Contract Invariants
 

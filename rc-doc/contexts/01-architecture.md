@@ -36,8 +36,10 @@ First matching branch wins:
 | 1 | `not research_findings` | `"researcher"` |
 | 2 | `not draft` | `"writer"` |
 | 3 | `not critique` | `"critic"` |
-| 4 | `not is_approved and revision_count < 3` | `"writer"` |
+| 4 | `not is_approved and revision_count < MAX_REVISIONS` | `"writer"` |
 | 5 | otherwise | `"end"` |
+
+`MAX_REVISIONS = 3`, defined in `rc-core/agents/supervisor.py`.
 
 **Key design:** Structural checks precede content checks. Branch 3 ("has Critic run?") before branch 4 ("was it good?").
 
@@ -60,7 +62,7 @@ Supervisor routes to Critic
 ↓
 Critic scores and writes critique (non-empty)
 ↓
-Supervisor sees critique + not approved + revision_count < 3
+Supervisor sees critique + not approved + revision_count < MAX_REVISIONS
 ↓
 Routes back to Writer
 ↓
@@ -90,9 +92,9 @@ T+1-18 ddgs search + summarize (sequential, budget-capped)
 T+18.1 → writer
 T+24 draft ready
 T+24.1 → critic
-T+26 score / revise (max 3)
-T+26-30 approved → save to DB + pgvector → completed
+T+25.1 critic (LLM rubric, temp 0.0, ~1-2s)
+T+26-30 revise loop if avg < 8 (max 3) → approved → save to DB + pgvector → completed
 
 text
 
-**Phase 3 measured:** ~26s end-to-end (under the 30s target), real ddgs search, 4 findings with live URLs, 6 LLM calls, revision cycle completes at revision_count=2.
+**Phase 4 measured:** ~26s end-to-end (under the 30s target), real ddgs search, real LLM Critic with JSON rubric, single-pass approve at avg=10.0 on the last run, revision_count=1.

@@ -26,7 +26,8 @@ All free and self-hostable. No paid APIs, no cloud vector DBs, no proprietary lo
 | Mistral | `MISTRAL_API_KEY` | 60 RPM, uncapped daily | Secondary |
 | OpenRouter | `OPENROUTER_API_KEY` | 50 RPD (`:free` models) | Tertiary |
 | NVIDIA NIM | `NVIDIA_API_KEY` | 40 RPM, credit-limited | Quaternary |
-| Cohere | `COHERE_API_KEY` | 1,000/month | Phase 4 (last resort) |
+| Cohere | — | not in freelm | Deferred; no provider class in the Python package |
+| Cerebras | `CEREBRAS_API_KEY` | Free Trial requires card | Deferred |
 | Groq | `GROQ_API_KEY` | — | Region-restricted, commented out |
 
 ## freelm API Surface (verified)
@@ -56,8 +57,6 @@ GEMINI_API_KEY=
 MISTRAL_API_KEY=
 OPENROUTER_API_KEY=
 NVIDIA_API_KEY=
-# COHERE_API_KEY=
-# GROQ_API_KEY=
 .env is gitignored. Only .env.example is committed.
 
 Tooling Versions

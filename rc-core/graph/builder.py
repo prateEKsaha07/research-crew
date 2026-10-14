@@ -6,6 +6,9 @@ edge from every source (START and each worker node).
 Phase 2 change: LLM is injected into researcher and writer via
 functools.partial. get_llm() is called once by the caller, not at
 module import.
+
+Phase 4 change: LLM is also injected into critic. All three
+LLM-using nodes are bound the same way.
 """
 
 import time
@@ -40,9 +43,9 @@ def _reason(name: str, out: dict) -> str:
         return f"draft {len(out.get('draft', ''))} chars"
     if name == "critic":
         scores = out.get("confidence_scores", {})
-        avg = sum(scores.values()) / len(scores) if scores else 0
-        verdict = "approved" if out.get("is_approved") else "revision requested"
-        return f"score={avg:.1f}, {verdict}"
+        avg = scores.get("avg", 0.0)
+        approved = bool(out.get("is_approved"))
+        return f"avg={avg:.1f} approved={approved}"
     return ""
 
 
@@ -63,7 +66,7 @@ def build_graph(llm):
     """Assemble and compile the pipeline. llm must be an LLMClient."""
     graph = StateGraph(ResearchState)
 
-    # Bind llm into the two LLM-using nodes; critic stays stub
+    # All three LLM-using nodes are bound via partial
     graph.add_node(
         "researcher",
         logged("researcher", partial(researcher, llm=llm)),
@@ -74,7 +77,7 @@ def build_graph(llm):
     )
     graph.add_node(
         "critic",
-        logged("critic", critic),
+        logged("critic", partial(critic, llm=llm)),
     )
 
     route_map = {

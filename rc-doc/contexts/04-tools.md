@@ -2,7 +2,7 @@
 
 External integrations live in `rc-core/tools/`. Each is a focused module with a clear contract.
 
-## `tools/llm.py` (DONE — Phase 2)
+## `tools/llm.py` (DONE — Phase 2, updated Phase 4)
 
 Wraps `freelm.FreeLLM` with a 4-provider failover chain and adds logging plus error translation.
 
@@ -19,11 +19,11 @@ DEFAULT_MAX_TOKENS = 2000
 QUERY_MAX_TOKENS   = 500     # researcher_query_gen
 SUMMARY_MAX_TOKENS = 300     # researcher_summarize
 DRAFT_MAX_TOKENS   = 3500    # writer_draft, writer_revise
-CRITIC_MAX_TOKENS  = 800     # Phase 4
+CRITIC_MAX_TOKENS  = 800     # critic_score, critic_repair
 Provider Chain
 Priority order: Gemini → Mistral → OpenRouter → NVIDIA NIM
 
-Cohere: deferred to Phase 4 (1,000 calls/month cap fits last-resort role)
+Cohere: not available as a provider class in the freelm Python package (checked Phase 4). Cerebras is available in freelm but requires a card on signup. 5th provider deferred.
 
 Groq: commented out (region-restricted)
 
@@ -46,8 +46,6 @@ GEMINI_API_KEY=
 MISTRAL_API_KEY=
 OPENROUTER_API_KEY=
 NVIDIA_API_KEY=
-# COHERE_API_KEY=
-# GROQ_API_KEY=
 get_llm() skips providers with missing keys. Raises ValueError if all keys are missing.
 
 tools/search.py (DONE — Phase 3)

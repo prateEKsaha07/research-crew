@@ -1,12 +1,13 @@
-"""Prompt templates for Research & Report Crew (Phase 3).
+"""Prompt templates for Research & Report Crew (Phase 4).
 
 Pure functions: inputs in, prompt string out.
 No LLM calls, no state access.
 Temperature and max_tokens are chosen by the calling agent, not here.
-critic_score is not defined yet (Phase 4).
 
 Phase 3 change: researcher_summarize takes (query, snippet);
 writer_draft renders list[dict] findings as "<text> | <url>".
+Phase 4 change: critic_score and critic_repair added. The LLM emits
+only scores and critique; code computes avg and is_approved.
 """
 
 _QUERY_GEN = """Generate 3 to 5 distinct web search queries to research this topic: {topic}
@@ -67,6 +68,40 @@ Rules:
 Draft:
 {draft}"""
 
+_CRITIC_SCORE = """You are a strict research-report critic. Score the DRAFT on four dimensions.
+
+Dimensions and anchors (integer 0-10):
+- coverage: 10 = all 5 sections substantive and on-topic; 5 = some sections thin or off-topic; 0 = missing or empty sections.
+- evidence: 10 = every Key Findings claim has an inline citation drawn from the findings below; 5 = some claims cited, some not; 0 = no citations, or citations not drawn from the findings.
+- structure: 10 = exact section headings in order, clean Markdown; 5 = minor heading or ordering issues; 0 = missing or renamed headings.
+- clarity: 10 = precise, no filler, no repetition; 5 = some vague or repetitive passages; 0 = unreadable or contradictory.
+
+Rules:
+- Output ONLY a JSON object. No fences. No preamble. No commentary.
+- Schema: {{"scores": {{"coverage": <int>, "evidence": <int>, "structure": <int>, "clarity": <int>}}, "critique": "<specific, actionable>"}}
+- The critique MUST target the lowest-scoring dimension.
+- Do NOT request new sections.
+- Do NOT request a change to the citation format.
+- For evidence: check that Key Findings inline citations use URLs from the findings block below.
+
+Findings (format "<text> | <url>", one per line):
+{findings_block}
+
+DRAFT:
+<<<DRAFT>>>
+{draft}
+<<<END_DRAFT>>>"""
+
+_CRITIC_REPAIR = """Your previous output was not valid JSON. Return ONLY the JSON object, no fences, no preamble.
+
+Schema:
+{{"scores": {{"coverage": 0, "evidence": 0, "structure": 0, "clarity": 0}}, "critique": "..."}}
+
+Previous output:
+<<<RAW>>>
+{raw_output}
+<<<END_RAW>>>"""
+
 
 def researcher_query_gen(topic: str) -> str:
     """Build the query-generation prompt.
@@ -107,3 +142,28 @@ def writer_revise(draft: str, critique: str) -> str:
     Expected LLM output: the full revised Markdown, no commentary.
     """
     return _REVISE.format(draft=draft, critique=critique)
+
+
+def critic_score(draft: str, findings: list[dict]) -> str:
+    """Build the rubric-scoring prompt for the Critic.
+
+    Inputs: draft (str, full Markdown), findings (list of {"text","url"}).
+    Expected LLM output: {"scores": {...4 int keys...}, "critique": str}.
+    The LLM never computes avg or is_approved; code does.
+    """
+    findings_block = "\n".join(
+        f"{f['text']} | {f['url']}" for f in findings
+    )
+    return _CRITIC_SCORE.format(
+        draft=draft,
+        findings_block=findings_block,
+    )
+
+
+def critic_repair(raw_output: str) -> str:
+    """Build the single repair prompt after malformed Critic JSON.
+
+    Inputs: raw_output (str, the LLM's non-JSON reply).
+    Expected LLM output: the same JSON schema as critic_score.
+    """
+    return _CRITIC_REPAIR.format(raw_output=raw_output)

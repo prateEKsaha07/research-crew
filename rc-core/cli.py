@@ -5,7 +5,9 @@ from uuid import uuid4
 from graph.builder import build_graph
 from tools.llm import LLMUnavailableError, get_llm
 from agents.researcher import ResearchError
+from agents.critic import CriticError
 from tools.search import SearchUnavailableError
+
 
 def main():
     topic = " ".join(sys.argv[1:])
@@ -44,6 +46,9 @@ def main():
     except (SearchUnavailableError, ResearchError) as e:
         print(f"error: research failed - {e}", file=sys.stderr)
         sys.exit(1)
+    except CriticError as e:
+        print(f"[critic] FAILED: {e}", file=sys.stderr)
+        sys.exit(2)
 
     # Checkpoint verification
     snap = graph.get_state(config)
@@ -57,6 +62,16 @@ def main():
     print("\n" + "-" * 60 + "\n")
     print(final["draft"])
     print(f"\nrevision_count={final['revision_count']}")
+
+    # Confidence scores
+    scores = final.get("confidence_scores", {})
+    if scores:
+        print("\nconfidence_scores:")
+        for key in ("coverage", "evidence", "structure", "clarity", "avg"):
+            if key in scores:
+                print(f"  {key}: {scores[key]}")
+    else:
+        print("\nconfidence_scores: n/a")
 
     # Usage summary
     if llm.usage:

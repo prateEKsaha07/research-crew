@@ -31,13 +31,15 @@
 - `phase-0-skeleton`
 - `phase-1-checkpointing`
 - `phase-2-real-llm`
-- `phase-3-jiro` (current)
+- `phase-3-jiro`
+- `phase-4-critic` (current)
 
 **Tags shipped:**
 - `v0.1-skeleton`
 - `v0.2-checkpointing`
 - `v0.3-real-llm`
 - `v0.4-jiro`
+- `v0.5-critic`
 
 ## Testing Expectations
 
@@ -46,7 +48,7 @@
 - Phase 4+: integration test of full graph (mock LLM)
 - Phase 6+: API test via httpx
 
-**Current:** 22 tests passing (`test_supervisor.py` x 8, `test_checkpointing.py` x 2, `test_search.py` x 7, `test_researcher.py` x 4, `test_writer.py` x 1)
+**Current:** 35 tests passing (`test_supervisor.py` x 8, `test_checkpointing.py` x 2, `test_search.py` x 7, `test_researcher.py` x 4, `test_writer.py` x 1, `test_critic.py` x 11, `test_graph_integration.py` x 2)
 
 ## Console Log Formats
 
@@ -64,6 +66,10 @@ Search call (Phase 3+):
 text
 [search] query=<q> results=<N> latency=<int>ms
 [search] FAILED: <ExceptionType>: <message>
+Critic score line (Phase 4+):
+
+text
+[critic] coverage=<N> evidence=<N> structure=<N> clarity=<N> avg=<X.XX> approved=<B>
 Checkpoint (CLI):
 
 text

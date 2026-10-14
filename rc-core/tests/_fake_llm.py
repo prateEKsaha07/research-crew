@@ -1,6 +1,35 @@
-"""Minimal fake LLM for tests. Returns canned strings by call count."""
+"""Fake LLMs for tests.
+
+FakeLLM: Phase 2 call-order fake. Returns canned strings by call count.
+CriticAwareFakeLLM: Phase 4 marker-dispatching fake. Routes each chat()
+call to a canned reply based on a substring in the prompt.
+
+_fake_llm(critic_replies=None) returns a CriticAwareFakeLLM with
+Phase 2-shaped defaults for queries/summary/draft/revise and either
+a caller-supplied critic reply queue or a default approve JSON.
+"""
+
+import json
+
+
+_APPROVE_JSON = json.dumps({
+    "scores": {"coverage": 9, "evidence": 9, "structure": 9, "clarity": 9},
+    "critique": "approved",
+})
+
+_MARKERS = [
+    ("Generate 3 to 5 distinct web search queries", "queries"),
+    ("Write ONE factual sentence about:",             "summary"),
+    ("Write a 900-1400 word report",                  "draft"),
+    ("Revise the draft below",                        "revise"),
+    ("You are a strict research-report critic",       "critic"),
+    ("Your previous output was not valid JSON",       "repair"),
+]
+
 
 class FakeLLM:
+    """Minimal fake LLM for tests. Returns canned strings by call count."""
+
     def __init__(self, responses):
         self.responses = list(responses)
         self.calls = 0
@@ -15,32 +44,49 @@ class FakeLLM:
         self.calls += 1
         return reply
 
-def test_two_threads_are_isolated(monkeypatch):
-    from agents import researcher as res_mod
 
-    def make_search():
-        q = iter([
-            [{"title": "t", "url": "https://x/1", "snippet": "s1"}],
-            [{"title": "t", "url": "https://x/2", "snippet": "s2"}],
-            [{"title": "t", "url": "https://x/3", "snippet": "s3"}],
-        ])
-        return lambda q_, *, max_results=3: next(q)
+class CriticAwareFakeLLM:
+    """Dispatches by prompt marker. Critic replies come from a queue."""
 
-    monkeypatch.setattr(res_mod, "perf_counter", lambda: 0.0)
+    def __init__(self, critic_replies=None):
+        self.critic_replies = list(critic_replies or [])
+        self.calls = 0
+        self.critic_calls = 0
+        self.usage = {}
+        self.seen = []  # list of category strings, in order
 
-    graph_a = build_graph(_fake_llm())
-    monkeypatch.setattr(res_mod, "search", make_search())
-    cfg_a = {"configurable": {"thread_id": str(uuid4())}}
-    graph_a.invoke(_initial_state(), cfg_a)
-    snap_a = graph_a.get_state(cfg_a)
+    def _categorize(self, prompt):
+        for marker, category in _MARKERS:
+            if marker in prompt:
+                return category
+        return "unknown"
 
-    graph_b = build_graph(_fake_llm())
-    monkeypatch.setattr(res_mod, "search", make_search())
-    cfg_b = {"configurable": {"thread_id": str(uuid4())}}
-    graph_b.invoke(_initial_state(), cfg_b)
-    snap_b = graph_b.get_state(cfg_b)
+    def chat(self, messages, *, temperature=0.0, max_tokens=2000):
+        prompt = messages[0]["content"]
+        category = self._categorize(prompt)
+        self.seen.append(category)
+        self.calls += 1
 
-    assert snap_a.values["topic"] == "test topic"
-    assert snap_b.values["topic"] == "test topic"
-    assert snap_a.config["configurable"]["thread_id"] != \
-           snap_b.config["configurable"]["thread_id"]
+        if category == "queries":
+            return "query one\nquery two\nquery three"
+        if category == "summary":
+            return f"Finding {self.calls}."
+        if category == "draft":
+            return "# Report\n\n## Executive Summary\n..."
+        if category == "revise":
+            return "# Report (revised)\n\n## Executive Summary\n..."
+        if category == "critic":
+            self.critic_calls += 1
+            if self.critic_replies:
+                return self.critic_replies.pop(0)
+            return _APPROVE_JSON
+        if category == "repair":
+            return _APPROVE_JSON
+        raise RuntimeError(
+            f"CriticAwareFakeLLM cannot categorize prompt: {prompt[:80]!r}"
+        )
+
+
+def _fake_llm(critic_replies=None):
+    """Phase 4 graph-driver fake. Defaults to approve on the Critic path."""
+    return CriticAwareFakeLLM(critic_replies=critic_replies)

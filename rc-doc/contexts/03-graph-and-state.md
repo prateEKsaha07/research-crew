@@ -14,24 +14,30 @@ class Finding(TypedDict):
     url: str
 
 
+class ConfidenceScores(TypedDict, total=False):
+    coverage: float
+    evidence: float
+    structure: float
+    clarity: float
+    avg: float
+
+
 class ResearchState(TypedDict):
     topic: str
     research_findings: Annotated[list[Finding], add]   # append-only
     draft: str
     critique: str
-    confidence_scores: dict
+    confidence_scores: ConfidenceScores
     revision_count: int
     is_approved: bool
     current_step: str
-
-```
 Field Reference
 Key	Type	Writer	Purpose
 topic	str	CLI / API	Subject to research
 research_findings	Annotated[list[Finding], add]	Researcher	Cited evidence: list of {text, url}, append-only
 draft	str	Writer	Current Markdown report
 critique	str	Writer (clears), Critic (writes)	Feedback or "approved"
-confidence_scores	dict	Critic	Per-dimension rubric scores
+confidence_scores	ConfidenceScores (all keys optional, all float)	Critic	Rubric scores + avg. Empty {} on fresh state.
 revision_count	int	Critic	Number of Critic passes
 is_approved	bool	Critic	Terminal flag
 current_step	str	(reserved)	Diagnostic
@@ -66,12 +72,12 @@ critic	decide(state)	writer or END
 No fixed edges. Every transition is conditional.
 
 LLM Injection
-llm is injected via functools.partial when registering nodes:
+Phase 4: all three LLM-using nodes are bound via partial. The Critic is no longer a stub.
 
 python
 graph.add_node("researcher", logged("researcher", partial(researcher, llm=llm)))
-graph.add_node("writer", logged("writer", partial(writer, llm=llm)))
-graph.add_node("critic", logged("critic", critic))
+graph.add_node("writer",     logged("writer",     partial(writer,     llm=llm)))
+graph.add_node("critic",     logged("critic",     partial(critic,     llm=llm)))
 get_llm() is called once by the caller (cli.py), never at module level.
 
 The route_map
@@ -95,7 +101,6 @@ Log Decorator
 Wraps each node:
 
 text
-```
 def logged(name, fn):
     def wrapper(state):
         t0 = perf_counter()
@@ -106,17 +111,14 @@ def logged(name, fn):
         print(f"[p2] {name} -> {nxt} | {reason(name, out)} | {ms}ms")
         return out          # returns original output, not merged
     return wrapper
-```
 Critical: merged must respect the add reducer on research_findings. Naive {**state, **out} merge loses prior findings.
 
 Success Check
-```bash
+bash
 python -c "from graph.builder import build_graph; print(list(build_graph(llm=None).get_graph().nodes))"
 # Expected: ['__start__', 'researcher', 'writer', 'critic', '__end__']
-```
 Pipeline Flow
 text
-```
               ┌──────────────┐
               │     START    │
               └──────┬───────┘
@@ -144,4 +146,6 @@ text
                             ┌──────────┐
                             │   END    │
                             └──────────┘
-```
+text
+
+---

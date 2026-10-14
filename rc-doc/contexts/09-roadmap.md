@@ -1,8 +1,8 @@
 # Roadmap
 
-**Current phase:** 4 — Real Critic
-**Latest tag:** `v0.4-jiro`
-**Active branch:** `phase-4-critic`
+**Current phase:** 5 — feenion + pgvector
+**Latest tag:** `v0.5-critic`
+**Active branch:** `phase-5-memory`
 
 ## Progress Tracker
 
@@ -12,13 +12,13 @@
 | 1 — Checkpointing | ✅ Done | `v0.2-checkpointing` | Verified routing + MemorySaver |
 | 2 — Real LLM | ✅ Done | `v0.3-real-llm` | Real LLM for Researcher + Writer |
 | 3 — ddgs Search | ✅ Done | `v0.4-jiro` | Real URLs, `list[dict]` findings |
-| 4 — Real Critic | 🚧 In Progress | — | Rubric scoring, JSON output |
-| 5 — feenion + pgvector | ⏳ Pending | — | Tracing, semantic memory |
+| 4 — Real Critic | ✅ Done | `v0.5-critic` | Rubric scoring, JSON output |
+| 5 — feenion + pgvector | 🚧 In Progress | — | Tracing, semantic memory |
 | 6 — FastAPI + SSE | ⏳ Pending | — | HTTP API, streaming progress |
 | 7 — Docker Compose | ⏳ Pending | — | Container orchestration |
 | 8 — Kubernetes | ⏳ Pending | — | Cluster deployment |
 
-**4 of 9 phases complete.**
+**5 of 9 phases complete.**
 
 ## Phase 0 — Walking Skeleton ✅
 
@@ -76,19 +76,26 @@
 
 **Tag:** `v0.4-jiro`
 
-## Phase 4 — Real Critic ⏳
+## Phase 4 — Real Critic ✅
 
-**Goal:** Replace stub with LLM-scored rubric.
+**Delivered:**
+- `graph/state.py` — `ConfidenceScores` TypedDict (`total=False`, all `float`)
+- `prompts/templates.py` — `critic_score(draft, findings)`, `critic_repair(raw_output)` (Six templates now)
+- `agents/critic.py` — real LLM rubric, JSON parse + validate, one repair pass, `CriticError`, invariant 2 honored
+- `agents/supervisor.py` — `MAX_REVISIONS = 3` extracted; single source of truth
+- `graph/builder.py` — `partial(critic, llm=llm)`; `_reason("critic")` returns `avg=<x> approved=<b>`
+- `cli.py` — catches `CriticError`, prints `confidence_scores:` block
+- `tests/_fake_llm.py` — `CriticAwareFakeLLM`, `_fake_llm(critic_replies=...)`
+- `tests/test_critic.py` (11 tests)
+- `tests/test_graph_integration.py` (2 tests)
 
-**Planned changes:**
-- `prompts/templates.py` — add `critic_score(draft, findings)` template
-- `agents/critic.py` — real LLM scoring, JSON parsing, retry on malformed
-- Code computes `avg` and `is_approved`; cap stays in supervisor
-- Cohere added to the provider chain
+**Verified:** 35 tests passing. Real CLI run: `[critic] coverage=10 evidence=10 structure=10 clarity=10 avg=10.00 approved=True`, `revision_count=1`, clean terminate.
 
-**Success check:** Critic returns JSON scores; approval at avg ≥ 8; malformed JSON retries once then fails job.
+**Skipped:** Cohere (not in freelm), Cerebras (card required).
 
-## Phase 5 — feenion + pgvector ⏳
+**Tag:** `v0.5-critic`
+
+## Phase 5 — feenion + pgvector 🚧 IN PROGRESS
 
 **Goal:** Observability and cross-session memory.
 
@@ -148,4 +155,4 @@
 
 ## Next Atomic Action
 
-**Phase 4, Task 1:** Design `critic_score(draft, findings)` template and `agents/critic.py` LLM rubric. Temperature 0.0, `CRITIC_MAX_TOKENS = 800`. Malformed JSON -> one repair retry -> fail job.
+**Phase 5, Task 1:** Design `tools/memory.py` — pgvector schema, `find_similar(topic, k=3)`, `store(report, findings)`. Integrate feenion tracing into `graph/builder.py:logged()`.

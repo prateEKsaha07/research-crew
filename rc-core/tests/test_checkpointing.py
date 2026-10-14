@@ -3,7 +3,7 @@
 from uuid import uuid4
 
 from graph.builder import build_graph
-from tests._fake_llm import FakeLLM
+from tests._fake_llm import _fake_llm
 
 
 def _initial_state():
@@ -17,21 +17,6 @@ def _initial_state():
         "is_approved": False,
         "current_step": "start",
     }
-
-
-def _fake_llm():
-    return FakeLLM([
-        # query gen
-        "query one\nquery two\nquery three",
-        # summaries
-        "Finding one.",
-        "Finding two.",
-        "Finding three.",
-        # writer draft
-        "# Report\n\n## Executive Summary\n...",
-        # writer revise
-        "# Report (revised)\n\n## Executive Summary\n...",
-    ])
 
 
 def _make_search():
