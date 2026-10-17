@@ -1,3 +1,4 @@
+```markdown
 # Agents
 
 Four agents. One is a router (edge function). Three are nodes.
@@ -7,6 +8,10 @@ Four agents. One is a router (edge function). Three are nodes.
 **File:** `rc-core/agents/supervisor.py`
 **Type:** Edge function (pure, no LLM, no side effects)
 **Signature:** `decide(state) -> Literal["researcher", "writer", "critic", "end"]`
+
+**Why it exists:** the pipeline needs deterministic routing between nodes. Doing this with an LLM would (1) cost tokens per step, (2) be non-deterministic, (3) be untestable. A pure function is cheap, reproducible, and unit-testable.
+
+**Objective:** given the state, return exactly one next-node name. Never touch state. Never call the LLM.
 
 Rule-based router. First matching branch wins:
 not state["research_findings"] -> "researcher"
@@ -21,8 +26,7 @@ otherwise -> "end"
 
 text
 
-`MAX_REVISIONS = 3` is defined in `supervisor.py` and imported by
-`critic.py`.
+`MAX_REVISIONS = 3` is defined in `supervisor.py` and imported by `critic.py`. Single source of truth so the cap cannot drift.
 
 **Contract:** Structural before content. Branch 3 (has Critic run?) precedes branch 4 (was it good?).
 
@@ -34,16 +38,24 @@ text
 **Type:** Node
 **Signature:** `researcher(state, llm) -> dict`
 
-**Phase 3 (current):** real ddgs search + LLM summaries.
+**Why it exists:** a report without real, cited evidence is fabrication. The researcher converts a free-text topic into a list of `{text, url}` findings, each URL a live source. Before searching, it recalls prior findings from vector memory so the same topic does not need to be re-researched every time.
+
+**Objective:** produce `research_findings` that the Writer can cite, with at least one real URL, within `RESEARCH_BUDGET_S`.
+
+**Phase 5 (current):** recall + real ddgs search + LLM summaries.
 
 Flow:
 1. Extract topic
-2. `researcher_query_gen(topic)` -> prompt
-3. `llm.chat(..., temperature=0.3, max_tokens=QUERY_MAX_TOKENS)` -> queries
-4. Parse: strip numbering/bullets/quotes, dedup (case-insensitive), cap 5
-5. Zero usable queries -> raise `ResearchError`
-6. Record `t0 = perf_counter()` at function entry
-7. Per query, in order:
+2. Record `t0 = perf_counter()` at function entry
+3. Recall from vector memory (best-effort):
+   - `find_similar(topic)` inside `span("memory.find_similar", topic=...)`
+   - `MemoryUnavailableError` -> log, continue without recall
+   - Recalled URLs seed `seen_urls` so live search picks different results
+4. `researcher_query_gen(topic)` -> prompt
+5. `llm.chat(..., temperature=0.3, max_tokens=QUERY_MAX_TOKENS)` -> queries
+6. Parse: strip numbering/bullets/quotes, dedup (case-insensitive), cap 5
+7. Zero usable queries -> raise `ResearchError`
+8. Per query, in order:
    - If `perf_counter() - t0 > RESEARCH_BUDGET_S` (18s): log
      "[researcher] budget exceeded after N queries" and break
    - `search(q, max_results=3)` from `tools.search`
@@ -52,8 +64,11 @@ Flow:
    - `researcher_summarize(q, chosen["snippet"])` -> prompt
    - `llm.chat(..., temperature=0.3, max_tokens=SUMMARY_MAX_TOKENS)`
    - Append `{"text": text, "url": chosen["url"]}`, add to `seen_urls`
-8. Zero findings -> raise `ResearchError`
-9. Return `{"research_findings": [...]}`
+9. Merge: `out = recalled_stripped + new_findings`
+10. Empty `out` -> raise `ResearchError`
+11. Return `{"research_findings": out}`
+
+**Why this merge order:** recalled findings come first so the report reflects memory continuity; new findings supplement. `distance` is stripped from recalled items before returning because state does not own it (invariant 4 in `07-conventions.md`).
 
 **Contract:** Returns **only new findings**. The `add` reducer handles
 the merge. `ResearchError` is defined in `researcher.py` and caught
@@ -61,13 +76,19 @@ by `cli.py`.
 
 **Budget:** `RESEARCH_BUDGET_S = 18`. Checked between queries only;
 one slow search call can overshoot. Lowered from 25 after a Phase 3
-run measured 30.8s researcher wall time.
+run measured 30.8s researcher wall time. Includes the recall call.
+
+**Tests:** 6 in `test_researcher.py` (4 from Phase 3, 2 added in Phase 5: recall merge + memory-unavailable degradation).
 
 ## Writer
 
 **File:** `rc-core/agents/writer.py`
 **Type:** Node
 **Signature:** `writer(state, llm) -> dict`
+
+**Why it exists:** the Critic reviews Markdown, not raw findings. The Writer is the only node that produces the report artifact. It is separated from the Researcher because generation is an LLM task with a different prompt, temperature, and failure mode.
+
+**Objective:** produce a 900-1400 word Markdown report with five exact headings and inline citations drawn only from `research_findings`.
 
 Modes:
 - **Draft** when `state["critique"] == ""`
@@ -79,7 +100,7 @@ Flow:
 3. `llm.chat(..., temperature=0.7, max_tokens=DRAFT_MAX_TOKENS)`
 4. Return `{"draft": <markdown>, "critique": ""}`
 
-**Contract:** Always clears `critique` after writing.
+**Contract:** Always clears `critique` after writing. This is invariant 1: clearing the critique tells the supervisor "the feedback was consumed, evaluate again."
 
 ## Critic
 
@@ -87,7 +108,9 @@ Flow:
 **Type:** Node
 **Signature:** `critic(state, llm) -> dict`
 
-**Phase 4:** real LLM rubric.
+**Why it exists:** the Writer's first draft is not always good. Without a quality gate, every run ships whatever the LLM produced. The Critic is the only node that decides "this is good enough" or "revise." It also produces the confidence scores the CLI prints.
+
+**Objective:** score the draft against a four-dimension rubric, produce an actionable critique when rejected, and record the scores and revision counter for later inspection.
 
 Flow:
 1. Read draft, findings, revision_count
@@ -110,6 +133,10 @@ Flow:
 
 **Contract:** `critique` is **ALWAYS non-empty** on every return path (invariant 2). Critic touches only the four keys above.
 
+**Why temperature 0.0:** scoring must be reproducible. Higher temperature produces score drift across runs.
+
+**Why repair once, then fail:** one retry catches the common case (LLM emits fences or a stray sentence). Two failures mean the provider is emitting junk; silently falling back to "approve" would let bad drafts through.
+
 **Critique contract:**
 
 | Outcome | `critique` | `is_approved` |
@@ -120,7 +147,9 @@ Flow:
 
 Empty `critique` means only: "Critic has not run yet".
 
-**`CriticError`** is defined in `critic.py` and caught by `cli.py`.
+**`CriticError`** is defined in `critic.py` and caught by `cli.py` (exit code 2).
+
+**Tests:** 11 in `test_critic.py`.
 
 ## Agent Contract Invariants
 
@@ -133,7 +162,10 @@ Empty `critique` means only: "Critic has not run yet".
 
 | State | Meaning | Next |
 |---|---|---|
-| `critique == ""`, `draft == ""` | Nothing written | → Researcher |
-| `critique == ""`, `draft != ""` | Draft fresh, un-reviewed | → Critic |
-| `critique != ""`, `is_approved == False` | Rejected, revision available | → Writer |
-| `critique != ""`, `is_approved == True` | Approved | → END |
+| `critique == ""`, `draft == ""` | Nothing written | -> Researcher |
+| `critique == ""`, `draft != ""` | Draft fresh, un-reviewed | -> Critic |
+| `critique != ""`, `is_approved == False` | Rejected, revision available | -> Writer |
+| `critique != ""`, `is_approved == True` | Approved | -> END |
+```
+
+---

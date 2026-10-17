@@ -22,6 +22,7 @@ from agents.researcher import researcher
 from agents.supervisor import decide
 from agents.writer import writer
 from graph.state import ResearchState
+from tools.tracing import span
 
 
 def _apply_reducer(state: dict, out: dict) -> dict:
@@ -50,16 +51,31 @@ def _reason(name: str, out: dict) -> str:
 
 
 def logged(name: str, fn):
-    """Wrap a node with timing and a [p2] transition log line."""
+    """Wrap a node with timing, tracing, and a [p2] transition log line."""
     def wrapper(state: ResearchState) -> dict:
         t0 = time.perf_counter()
-        out = fn(state)
+        with span(name, revision_count=state.get("revision_count", 0)):
+            out = fn(state)
         merged = _apply_reducer(state, out)
         nxt = decide(merged)
         ms = int((time.perf_counter() - t0) * 1000)
         print(f"[p2] {name} -> {nxt} | {_reason(name, out)} | {ms}ms")
         return out
     return wrapper
+
+
+
+# def logged(name: str, fn):
+#     """Wrap a node with timing and a [p2] transition log line."""
+#     def wrapper(state: ResearchState) -> dict:
+#         t0 = time.perf_counter()
+#         out = fn(state)
+#         merged = _apply_reducer(state, out)
+#         nxt = decide(merged)
+#         ms = int((time.perf_counter() - t0) * 1000)
+#         print(f"[p2] {name} -> {nxt} | {_reason(name, out)} | {ms}ms")
+#         return out
+#     return wrapper
 
 
 def build_graph(llm):

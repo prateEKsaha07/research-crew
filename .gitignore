@@ -29,6 +29,7 @@ MANIFEST
 # ─────────────────────────────────────────────────────────────
 .venv/
 venv/
+testvenv/
 ENV/
 env/
 .conda/
@@ -59,10 +60,11 @@ secrets/
 freelm_state.json
 
 # ─────────────────────────────────────────────────────────────
-# feenion / tracing local output
+# feenion / tracing local output (Phase 5)
 # ─────────────────────────────────────────────────────────────
 .feenion/
 traces/
+telemetry/
 *.trace.jsonl
 
 # ─────────────────────────────────────────────────────────────
@@ -113,6 +115,11 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 .pnpm-store/
+
+# ─────────────────────────────────────────────────────────────
+# Vendored repos (not part of this project)
+# ─────────────────────────────────────────────────────────────
+feenion/
 
 # ─────────────────────────────────────────────────────────────
 # Docker

@@ -84,3 +84,49 @@ def test_budget_abort_partial(monkeypatch, capsys):
     captured = capsys.readouterr().out
     assert "budget exceeded after 1 queries" in captured
     assert len(out["research_findings"]) == 1
+
+def test_recalled_merged_and_url_deduped(monkeypatch):
+    from agents import researcher as res_mod
+
+    recalled = [
+        {"text": "old fact", "url": "https://old/1", "distance": 0.10},
+        {"text": "shared", "url": "https://shared/2", "distance": 0.15},
+    ]
+    monkeypatch.setattr(res_mod, "find_similar", lambda topic, **kw: recalled)
+    monkeypatch.setattr(res_mod, "perf_counter", lambda: 0.0)
+
+    # Search returns the shared URL first, then a new one.
+    queue = SearchQueue([
+        [{"title": "t", "url": "https://shared/2", "snippet": "s"}],
+        [{"title": "t", "url": "https://new/3", "snippet": "s"}],
+    ])
+    monkeypatch.setattr(res_mod, "search", queue)
+
+    llm = FakeLLM(["qa\nqb", "sum-b"])
+    out = researcher(_state(), llm)
+
+    urls = [f["url"] for f in out["research_findings"]]
+    # recalled 2 first, then only the new one (shared skipped)
+    assert urls == ["https://old/1", "https://shared/2", "https://new/3"]
+    # distance key stripped
+    assert all("distance" not in f for f in out["research_findings"])
+
+
+def test_memory_unavailable_degrades(monkeypatch):
+    from agents import researcher as res_mod
+    from tools.memory import MemoryUnavailableError
+
+    def _raise(topic, **kw):
+        raise MemoryUnavailableError("db down")
+
+    monkeypatch.setattr(res_mod, "find_similar", _raise)
+    monkeypatch.setattr(res_mod, "perf_counter", lambda: 0.0)
+
+    queue = SearchQueue([
+        [{"title": "t", "url": "https://x/1", "snippet": "s"}],
+    ])
+    monkeypatch.setattr(res_mod, "search", queue)
+
+    llm = FakeLLM(["qa", "sum-a"])
+    out = researcher(_state(), llm)
+    assert [f["url"] for f in out["research_findings"]] == ["https://x/1"]

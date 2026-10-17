@@ -13,9 +13,8 @@ Design:
 """
 
 from time import perf_counter
-
 from ddgs import DDGS
-
+from tools.tracing import span
 
 # -- Constants -------------------------------------------------------
 DEFAULT_MAX_RESULTS = 3
@@ -96,6 +95,9 @@ def search(query: str, *, max_results: int = DEFAULT_MAX_RESULTS) -> list[dict]:
         latency_ms = int((perf_counter() - t0) * 1000)
         mapped = _map_results(raw_list, max_results)
         _log(f"query={query} results={len(mapped)} latency={latency_ms}ms")
+        with span("search", query=query, results=len(mapped),
+                  latency_ms=latency_ms):
+            pass
         return mapped
 
     last = errors[-1] if errors else RuntimeError("unknown")

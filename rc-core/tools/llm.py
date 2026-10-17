@@ -21,6 +21,8 @@ from freelm import (
     OpenRouter,
     NIM,
 )
+import time
+from tools.tracing import span
 
 
 # ── Token budgets ────────────────────────────────────────────────────
@@ -53,6 +55,8 @@ class LLMClient:
 
     def chat(self, messages, *, temperature=0.0, max_tokens=DEFAULT_MAX_TOKENS):
         """Single entry point. Delegates to freelm. Returns reply string."""
+        prompt_chars = sum(len(m.get("content", "")) for m in messages)
+        t0 = time.perf_counter()
         try:
             response = self._llm.chat(
                 messages,
@@ -63,7 +67,12 @@ class LLMClient:
             print(f"[llm] FAILED: {type(e).__name__}: {e}")
             raise LLMUnavailableError([("<freelm>", str(e))]) from e
 
+        latency_ms = int((time.perf_counter() - t0) * 1000)
         self._record(response)
+        with span("llm.chat", temperature=temperature,
+                  max_tokens=max_tokens, prompt_chars=prompt_chars,
+                  latency_ms=latency_ms):
+            pass
         return response.text
 
     def _record(self, response):

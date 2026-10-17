@@ -7,6 +7,8 @@ from tools.llm import LLMUnavailableError, get_llm
 from agents.researcher import ResearchError
 from agents.critic import CriticError
 from tools.search import SearchUnavailableError
+from tools.memory import MemoryUnavailableError, store
+from tools.tracing import init_tracing, span
 
 
 def main():
@@ -39,6 +41,15 @@ def main():
     graph = build_graph(llm)
 
     try:
+        init_tracing()
+        # Tag every span in this run with the checkpoint thread_id so
+        # the feenion UI groups them as one trace.
+        try:
+            import feenion
+            feenion.set_session(tid)
+        except Exception:
+            pass
+
         final = graph.invoke(initial_state, config=config)
     except LLMUnavailableError as e:
         print(f"error: LLM unavailable - {e}", file=sys.stderr)
@@ -72,6 +83,18 @@ def main():
                 print(f"  {key}: {scores[key]}")
     else:
         print("\nconfidence_scores: n/a")
+
+    # Persist to vector memory (best-effort; never fails a finished report)
+    if final.get("is_approved"):
+        try:
+            with span("memory.store", topic=topic):
+                store(
+                    topic,
+                    final["draft"],
+                    final["research_findings"],
+                )
+        except MemoryUnavailableError as e:
+            print(f"[memory] FAILED: {e}", file=sys.stderr)
 
     # Usage summary
     if llm.usage:

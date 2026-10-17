@@ -1,13 +1,16 @@
-"""Researcher node — real search + LLM summaries (Phase 3).
+"""Researcher node — real search + LLM summaries + vector recall (Phase 5).
 
 Flow:
-    1. Generate 3-5 search queries from the topic.
-    2. For each query, run a web search via tools.search.
-    3. Summarize the first unseen result's snippet with the LLM.
-    4. Return {text, url} findings; reducer appends to state.
+    1. Recall similar findings from pgvector (best-effort; failure
+       degrades to no recall).
+    2. Generate 3-5 search queries from the topic.
+    3. For each query, run a web search via tools.search.
+    4. Summarize the first unseen result's snippet with the LLM.
+    5. Return recalled + new findings as {text, url} dicts.
 
-Budget: RESEARCH_BUDGET_S caps wall time spent between queries.
-Budget check runs between queries only; one slow call can overshoot.
+Budget: RESEARCH_BUDGET_S caps wall time spent between queries AND
+includes the recall call. Budget check runs between queries only;
+one slow call can overshoot.
 """
 
 import re
@@ -18,11 +21,13 @@ from tools.llm import (
     QUERY_MAX_TOKENS,
     SUMMARY_MAX_TOKENS,
 )
+from tools.memory import MemoryUnavailableError, find_similar
 from tools.search import (
     DEFAULT_MAX_RESULTS,
     SearchUnavailableError,
     search,
 )
+from tools.tracing import span
 
 
 RESEARCH_BUDGET_S = 18
@@ -63,11 +68,22 @@ def _parse_queries(reply: str) -> list[str]:
 
 
 def researcher(state: dict, llm) -> dict:
-    """Phase 3: search + LLM summaries. Returns only new findings."""
+    """Phase 5: recall + search + LLM summaries. Returns only new findings."""
     t0 = perf_counter()
     topic = state["topic"]
 
-    # 1. Generate queries
+    # 1. Recall from vector memory (best-effort)
+    recalled = []
+    try:
+        with span("memory.find_similar", topic=topic):
+            recalled = find_similar(topic)
+    except MemoryUnavailableError as e:
+        print(f"[researcher] memory unavailable: {e}")
+
+    # Recalled URLs must not collide with live-search picks
+    seen_urls = {r["url"] for r in recalled}
+
+    # 2. Generate queries
     q_prompt = researcher_query_gen(topic)
     reply = llm.chat(
         [{"role": "user", "content": q_prompt}],
@@ -80,9 +96,8 @@ def researcher(state: dict, llm) -> dict:
             f"Researcher produced zero usable queries. Raw reply: {reply!r}"
         )
 
-    # 2. Search + summarize
-    findings = []
-    seen_urls = set()
+    # 3. Search + summarize
+    new_findings = []
     for i, q in enumerate(queries):
         if perf_counter() - t0 > RESEARCH_BUDGET_S:
             print(f"[researcher] budget exceeded after {i} queries")
@@ -112,10 +127,13 @@ def researcher(state: dict, llm) -> dict:
         if not text:
             continue
 
-        findings.append({"text": text, "url": chosen["url"]})
+        new_findings.append({"text": text, "url": chosen["url"]})
         seen_urls.add(chosen["url"])
 
-    if not findings:
+    # 4. Merge recalled + new; strip distance from recalled
+    out = [{"text": r["text"], "url": r["url"]} for r in recalled] + new_findings
+
+    if not out:
         raise ResearchError("Researcher produced zero findings.")
 
-    return {"research_findings": findings}
+    return {"research_findings": out}
